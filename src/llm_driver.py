@@ -348,52 +348,71 @@ class LLMDriver:
         print(f"[{self.agent_id}] (context cap hit - trimmed {dropped}+ old message(s))")
 
     def _call_llm_and_dispatch(self) -> None:
-        try:
-            self._trim_message_log()
-            context_size = len(self.message_log) + 1  # +1 for system prompt
-            print(f"[{self.agent_id}] thinking...")
-            self._logger.info(f"LLM CALL | context_size={context_size}")
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                self._trim_message_log()
+                context_size = len(self.message_log) + 1  # +1 for system prompt
+                if attempt == 0:
+                    print(f"[{self.agent_id}] thinking...")
+                else:
+                    print(f"[{self.agent_id}] thinking... (retry {attempt}/{max_retries})")
+                self._logger.info(f"LLM CALL | context_size={context_size} | attempt={attempt+1}")
 
-            if self._is_claude:
-                tool_calls, text_content = self._chat_complete_claude()
-            else:
-                assistant_msg = self._chat_complete_openai()
-                text_content = assistant_msg.get("content") or ""
-                tool_calls = self._extract_openai_tool_calls(assistant_msg)
-                self._store_assistant_turn_openai(assistant_msg)
+                if self._is_claude:
+                    tool_calls, text_content = self._chat_complete_claude()
+                else:
+                    assistant_msg = self._chat_complete_openai()
+                    text_content = assistant_msg.get("content") or ""
+                    tool_calls = self._extract_openai_tool_calls(assistant_msg)
+                    self._store_assistant_turn_openai(assistant_msg)
 
-            if text_content and text_content.strip():
-                if self.verbose:
-                    print(f"[{self.agent_id}] note: {text_content[:200]}")
-                self._logger.info(f"LLM TEXT | {text_content}")
+                if text_content and text_content.strip():
+                    if self.verbose:
+                        print(f"[{self.agent_id}] note: {text_content[:200]}")
+                    self._logger.info(f"LLM TEXT | {text_content}")
 
-            if tool_calls:
-                for call in tool_calls:
-                    self._logger.info(f"TOOL CALL | {call['name']} | args={json.dumps(call['args'])}")
-                    self._execute_tool(call["name"], call["args"], call.get("id"))
-            else:
-                print(f"[{self.agent_id}] reviewed messages, nothing to send or sign")
-                self._logger.warning("NO TOOL CALLS - LLM responded with text only")
+                if tool_calls:
+                    for call in tool_calls:
+                        self._logger.info(f"TOOL CALL | {call['name']} | args={json.dumps(call['args'])}")
+                        self._execute_tool(call["name"], call["args"], call.get("id"))
+                else:
+                    print(f"[{self.agent_id}] reviewed messages, nothing to send or sign")
+                    self._logger.warning("NO TOOL CALLS - LLM responded with text only")
 
-            self._logger.info(f"TURN DONE | {len(tool_calls)} tool call(s)")
+                self._logger.info(f"TURN DONE | {len(tool_calls)} tool call(s)")
+                return  # success – exit retry loop
 
-        except Exception as e:
-            self._logger.error(f"LLM ERROR | {e}")
-            msg = str(e)
-            low = msg.lower()
-            # Budget exhausted: a clear, friendly notice instead of a scary
-            # traceback. The issued key's spend hit its cap; the agent stays up
-            # but can't act until the cap is raised.
-            if "budget" in low and ("exceed" in low or "exceeded" in low):
-                print(f"\n[{self.agent_id}] 💸 Your LLM budget is used up - the agent can't "
-                      f"think until it's topped up. Contact the organizers if you need more; "
-                      f"the agent is otherwise fine and will resume once the budget is raised.\n")
-            elif "rate limit" in low or "ratelimit" in low or "429" in low:
-                print(f"[{self.agent_id}] LLM rate-limited; will retry on the next turn.")
-            else:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}][{self.agent_id}] LLM Driver error: {e}")
-                import traceback
-                traceback.print_exc()
+            except Exception as e:
+                self._logger.error(f"LLM ERROR | attempt={attempt+1} | {e}")
+                msg = str(e)
+                low = msg.lower()
+                # Budget exhausted: a clear, friendly notice instead of a scary
+                # traceback. The issued key's spend hit its cap; the agent stays up
+                # but can't act until the cap is raised.
+                if "budget" in low and ("exceed" in low or "exceeded" in low):
+                    print(f"\n[{self.agent_id}] 💸 Your LLM budget is used up - the agent can't "
+                          f"think until it's topped up. Contact the organizers if you need more; "
+                          f"the agent is otherwise fine and will resume once the budget is raised.\n")
+                    return  # no point retrying budget exhaustion
+                elif "rate limit" in low or "ratelimit" in low or "429" in low:
+                    print(f"[{self.agent_id}] LLM rate-limited; will retry on the next turn.")
+                    return  # rate-limit: back off and let the next message trigger a retry
+                elif "model output" in low and attempt < max_retries:
+                    # Empty model output error – trim last user message and retry
+                    wait = 2 ** attempt
+                    print(f"[{self.agent_id}] ⚠ Empty model output (attempt {attempt+1}); "
+                          f"retrying in {wait}s...")
+                    self._logger.warning(f"Empty model output – retry in {wait}s")
+                    import time; time.sleep(wait)
+                    # Trim the last user message that may have caused the confusion
+                    if self.message_log and self.message_log[-1]["role"] == "user":
+                        self.message_log.pop()
+                    continue  # retry
+                else:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}][{self.agent_id}] LLM Driver error: {e}")
+                    import traceback
+                    traceback.print_exc()
 
     # ------------------------------------------------------------------
     # OpenAI backend

@@ -44,7 +44,7 @@ def _clear_local_data() -> int:
     Local only - never touches the competition server."""
     import shutil
     removed = 0
-    for sub in ("session_results", "agent_logs"):
+    for sub in ("session_results", "agent_logs", "current_game"):
         d = PROJECT_ROOT / sub
         if d.exists():
             for f in list(d.iterdir()):
@@ -53,11 +53,6 @@ def _clear_local_data() -> int:
                     removed += 1
                 except Exception:
                     pass
-    for f in PROJECT_ROOT.glob("current_game_*.json"):
-        try:
-            f.unlink(); removed += 1
-        except Exception:
-            pass
     return removed
 
 

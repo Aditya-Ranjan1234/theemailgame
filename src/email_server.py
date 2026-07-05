@@ -930,7 +930,11 @@ async def register_agent(request: RegisterAgentRequest):
     print(f"✅ Agent {request.agent_id} registered successfully")
 
     # Action token – 30-minute expiry (the agent refreshes it as needed).
-    now = datetime.utcnow().timestamp()
+    # NOTE: use time.time() (always UTC-epoch) not datetime.utcnow().timestamp()
+    # because on Windows systems with non-UTC timezones, utcnow() returns local
+    # time when called as .timestamp(), causing JWT to appear instantly expired.
+    import time as _time
+    now = _time.time()
     token = jwt.encode({"sub": request.agent_id, "exp": now + 1800},
                        JWT_SECRET, algorithm="HS256")
     # View-only token for the live watch page – longer-lived (12h) since it can
@@ -1134,7 +1138,8 @@ async def admin_watch(agent_id: str, key: str = ""):
     Usage: /admin/watch/<agent_id>?key=<EMAIL_GAME_INTERNAL_KEY>"""
     if key != INTERNAL_KEY:
         raise HTTPException(status_code=403, detail="Forbidden")
-    now = datetime.utcnow().timestamp()
+    import time as _time
+    now = _time.time()
     view_token = jwt.encode({"sub": agent_id, "scope": "view", "exp": now + 43200},
                             JWT_SECRET, algorithm="HS256")
     from urllib.parse import quote

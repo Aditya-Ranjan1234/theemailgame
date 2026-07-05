@@ -54,7 +54,7 @@ def main():
     if args.reset:
         import shutil
         n = 0
-        for sub in ("session_results", "agent_logs"):
+        for sub in ("session_results", "agent_logs", "current_game"):
             d = PROJECT_ROOT / sub
             if d.exists():
                 for f in list(d.iterdir()):
@@ -62,11 +62,6 @@ def main():
                         shutil.rmtree(f) if f.is_dir() else f.unlink(); n += 1
                     except Exception:
                         pass
-        for f in PROJECT_ROOT.glob("current_game_*.json"):
-            try:
-                f.unlink(); n += 1
-            except Exception:
-                pass
         print(f"🧹 Reset: cleared {n} local item(s) (local leaderboard/history/logs).")
 
     def _exists(p):

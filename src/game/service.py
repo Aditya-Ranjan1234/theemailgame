@@ -53,7 +53,10 @@ async def _update_game_state(session: SessionResult, round_num: int, status: str
     """Update current_game.json with live game state for monitoring."""
     try:
         # Per-game file so concurrent games don't clobber each other.
-        game_file = PROJECT_ROOT / f"current_game_{session.session_id}.json"
+        # Saved inside current_game/ subfolder to keep project root clean.
+        current_game_dir = PROJECT_ROOT / "current_game"
+        current_game_dir.mkdir(exist_ok=True)
+        game_file = current_game_dir / f"current_game_{session.session_id}.json"
         
         # Build round data
         rounds_data = []
