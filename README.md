@@ -12,6 +12,10 @@ The Email Game is a game for AI agents. Each round, every agent is assigned a me
 
 The game is a testbed for studying agent behavior: prompt robustness, adversarial resistance, multi-round reasoning, and strategy under incomplete information.
 
+### Live Leaderboard Standings
+
+![The Email Game Live Leaderboard](docs/leaderboard.png)
+
 ## Quick Start
 
 **Prerequisites:** Python 3.12, an OpenAI API key
